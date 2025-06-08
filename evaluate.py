@@ -4,7 +4,9 @@ import time
 import numpy as np
 from tensorflow.keras.models import load_model
 from config import config
-from utils import prepare_dataset, generate_fgsm_subset, print_classification_report, plot_confusion_matrix, plot_roc, download_dataset
+from utils import (prepare_dataset, generate_fgsm_subset, print_classification_report, 
+                   plot_confusion_matrix, plot_roc, download_dataset,
+                   compute_mse, compute_ssim, compute_psnr, compute_map)
 
 # Dataset Downloading
 train_path, test_path = download_dataset()
@@ -89,3 +91,33 @@ print(f"Combined test dataset size: {X_comb.shape[0]} samples")
 evaluate_and_plot(X_comb, y_comb, "combined")
 
 print("\n✅ Testing complete. Plots saved.")
+
+# ─── Additional metrics (Clean vs. Adversarial) ────────────────────────────────
+
+# 1) Image-level similarity on the FGSM subset
+n_pairs = min(len(X_test), len(X_fgsm))
+mse_vals, ssim_vals, psnr_vals = [], [], []
+
+for i in range(n_pairs):
+    orig = ((X_test[i] + 1) * 127.5).astype(np.uint8)   # Scale back to [0,255]
+    adv  = ((X_fgsm[i] + 1) * 127.5).astype(np.uint8)
+    mse_vals.append(compute_mse(orig, adv))
+    ssim_vals.append(compute_ssim(orig, adv))
+    psnr_vals.append(compute_psnr(orig, adv, data_range=255))
+
+print("\n=== Image Similarity Metrics (Orig vs. FGSM) ===")
+print(f"Avg. MSE : {np.mean(mse_vals):.2f}")
+print(f"Avg. SSIM: {np.mean(ssim_vals):.4f}")
+print(f"Avg. PSNR: {np.mean(psnr_vals):.2f} dB")
+
+# 2) Mean Average Precision on clean & adversarial sets
+probs_clean = model.predict(X_test, verbose=1).flatten()
+ap_clean   = compute_map(y_test,   probs_clean)
+probs_adv   = model.predict(X_fgsm, verbose=1).flatten()
+ap_adv     = compute_map(y_fgsm,   probs_adv)
+
+print("\n=== Classification AP (mAP) ===")
+print(f"Clean set AP: {ap_clean:.4f}")
+print(f"Adversarial AP: {ap_adv:.4f}")
+
+print("\n✅ All additional metrics computed.")
